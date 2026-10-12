@@ -22,7 +22,48 @@ jobs:
     if: |
       !github.event.repository.is_template
     name: Find Exercise Issue
-    uses: skills/exercise-toolkit/.github/workflows/find-exercise-issue.yml@v0.6.0
+    runs-on: ubuntu-latest
+    outputs:
+      issue-url: ${{ steps.find-target.outputs.issue_url }}
+      issue-number: ${{ steps.find-target.outputs.issue_number }}
+    steps:
+      - name: Find exercise by issue title
+        id: find-target
+        uses: actions/github-script@v7
+        env:
+          ISSUE_TITLE_PREFIX: Exercise
+        with:
+          script: |
+            const response = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              sort: 'created',
+              direction: 'desc',
+              per_page: 50
+            });
+
+            const exerciseIssue = response.data.find(
+              item => !item.pull_request && item.title.includes(process.env.ISSUE_TITLE_PREFIX)
+            );
+
+            if (exerciseIssue) {
+              core.info(`Exercise issue found: #${exerciseIssue.number} (${exerciseIssue.html_url})`);
+              core.setOutput('issue_url', exerciseIssue.html_url);
+              core.setOutput('issue_number', exerciseIssue.number);
+              return;
+            }
+
+            const fallbackPullRequest = response.data.find(item => item.pull_request);
+            if (!fallbackPullRequest) {
+              throw new Error('No issue or pull request found to post workflow feedback.');
+            }
+
+            core.warning(
+              `No exercise issue found. Falling back to pull request #${fallbackPullRequest.number} (${fallbackPullRequest.html_url}).`
+            );
+            core.setOutput('issue_url', fallbackPullRequest.html_url);
+            core.setOutput('issue_number', fallbackPullRequest.number);
 
   check_step_work:
     name: Check step work
